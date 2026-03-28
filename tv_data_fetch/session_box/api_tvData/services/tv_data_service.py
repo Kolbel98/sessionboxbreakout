@@ -11,27 +11,30 @@ INSTRUMENT_MAP = {
 }
 
 
+MAX_DAYS_BACK = 30
+
+
 def resolve_date_range(period: str, date_from: datetime = None, date_to: datetime = None) -> tuple[datetime, datetime]:
     """
     Resolves a named period or custom range into (start, end) datetime objects (UTC-aware).
+    Max range is limited to ~30 days back due to data source constraints.
     """
     now = datetime.now(tz=timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    earliest_allowed = today - timedelta(days=MAX_DAYS_BACK)
 
     if period == "yesterday":
         start = today - timedelta(days=1)
         end = today
     elif period == "this_week":
         start = today - timedelta(days=today.weekday())
-        end = now
+        end = today + timedelta(days=1)
     elif period == "last_week":
         start = today - timedelta(days=today.weekday() + 7)
         end = start + timedelta(days=7)
-    elif period == "last_month":
-        first_of_this_month = today.replace(day=1)
-        last_month_end = first_of_this_month - timedelta(days=1)
-        start = last_month_end.replace(day=1)
-        end = first_of_this_month
+    elif period == "this_month":
+        start = today.replace(day=1)
+        end = today + timedelta(days=1)
     elif period == "custom":
         if not date_from or not date_to:
             raise ValueError("custom period requires date_from and date_to")
@@ -39,6 +42,9 @@ def resolve_date_range(period: str, date_from: datetime = None, date_to: datetim
         end = date_to if date_to.tzinfo else date_to.replace(tzinfo=timezone.utc)
     else:
         raise ValueError(f"Unknown period: {period}")
+
+    if start < earliest_allowed:
+        raise ValueError(f"Date range too far back. Maximum {MAX_DAYS_BACK} days. Earliest allowed: {earliest_allowed.date()}")
 
     return start, end
 
@@ -70,10 +76,15 @@ class TvDataService:
         expected_bars = int(days_in_range * 0.7 * (8 * 60 / 5))
 
         if db_records.count() < max(1, expected_bars // 2):
+            # n_bars must cover from NOW back to the START of the range, not just the range length
+            now = datetime.now(tz=timezone.utc)
+            days_from_now_to_start = max(1, (now - start).days)
+            fetch_days = days_from_now_to_start + 7  # extra buffer
+
             df = self.fetch_historical_data(
                 symbol=INSTRUMENT_MAP[instrument]['symbol'],
                 exchange=INSTRUMENT_MAP[instrument]['exchange'],
-                days=days_in_range + 7,
+                days=fetch_days,
             )
             if df is not None and not df.empty:
                 start_ts = pd.Timestamp(start).tz_localize(None)
@@ -133,6 +144,7 @@ class TvDataService:
             PriceRecord.objects.bulk_create(records_to_create)
 
     def __days_to_bars(self, days: int, interval_minutes: int = 5) -> int:
+        MAX_BARS = 10000
         minutes_per_day = 24 * 60
         bars = (minutes_per_day // interval_minutes) * days
-        return bars
+        return min(bars, MAX_BARS)
