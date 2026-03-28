@@ -5,9 +5,9 @@ from ..models import PriceRecord
 
 INSTRUMENT_MAP = {
     "DAX":  {"symbol": "FDAX1!", "exchange": "EUREX"},
-    "NQ":   {"symbol": "NQ1!",   "exchange": "CME"},
-    "DJ":   {"symbol": "YM1!",   "exchange": "CBOT"},
-    "SP500":{"symbol": "ES1!",   "exchange": "CME"},
+    "NQ":   {"symbol": "NQ1!",   "exchange": "CME_MINI"},
+    "DJ":   {"symbol": "YM1!",   "exchange": "CBOT_MINI"},
+    "SP500":{"symbol": "ES1!",   "exchange": "CME_MINI"},
 }
 
 
