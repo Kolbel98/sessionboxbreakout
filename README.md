@@ -46,8 +46,10 @@ Each instrument has its own session configuration:
 - **Python 3.13+** with **[uv](https://docs.astral.sh/uv/)** package manager
 - **Django 6.0** — web framework
 - **Django REST Framework** — API serialization & views
-- **yfinance / tvDatafeed** — historical price data from TradingView
+- **tvDatafeed** — historical price data scraped from TradingView
 - **pandas** — data manipulation & time series handling
+- **PostgreSQL** + **psycopg2-binary** — production-ready relational database
+- **python-dotenv** — environment variable management
 - **django-cors-headers** — CORS support for frontend dev
 
 ### Frontend
@@ -98,6 +100,20 @@ SessionBox/
 
 - **Python 3.13+** & **[uv](https://docs.astral.sh/uv/)**
 - **Node.js 20+** & **npm**
+- **PostgreSQL** running locally (or remote)
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+# PostgreSQL
+DB_NAME=sessionbox
+DB_USER=postgres
+DB_PASSWORD=your_password
+DB_HOST=localhost
+DB_PORT=5432
+```
 
 ### Backend Setup
 
@@ -107,6 +123,9 @@ cd tv_data_fetch
 
 # Install dependencies with uv
 uv sync
+
+# Create the database in PostgreSQL
+psql -U postgres -c "CREATE DATABASE sessionbox;"
 
 # Run migrations
 uv run python session_box/manage.py migrate
@@ -165,28 +184,7 @@ Fetch raw OHLCV price data for an instrument and date range.
 
 ---
 
-## 📸 Screenshots
 
-> _Coming soon_
-
----
-
-## 📌 Roadmap
-
-- [ ] Production deployment (Render / Railway)
-- [ ] PostgreSQL database for production
-- [ ] More instruments & exchanges
-- [ ] Equity curve visualization
-- [ ] Export results to CSV
-- [ ] Authentication & user presets
-
----
-
-## 📄 License
-
-This project is open source and available under the [MIT License](LICENSE).
-
----
 
 <p align="center">
   Built with ☕ and 📊 by <a href="https://github.com/Kolbel98">@Kolbel98</a>
