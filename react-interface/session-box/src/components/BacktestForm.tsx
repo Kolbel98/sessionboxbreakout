@@ -4,6 +4,10 @@ import type { BacktestParams } from "../api";
 const INSTRUMENTS = ["DAX", "NQ", "SP500", "DJ"];
 const PERIODS = ["yesterday", "this_week", "last_week", "this_month", "custom"];
 const RR_MODES = ["1:1", "1:2", "1:3", "2:1", "custom"];
+const STRATEGIES = [
+  { value: "breakout", label: "Breakout" },
+  { value: "reverse", label: "Reverse" },
+];
 
 interface Props {
   onSubmit: (params: BacktestParams) => void;
@@ -19,6 +23,7 @@ export default function BacktestForm({ onSubmit, loading }: Props) {
   const [tpPoints, setTpPoints] = useState(50);
   const [rrMode, setRrMode] = useState("1:2");
   const [customSl, setCustomSl] = useState(25);
+  const [strategy, setStrategy] = useState("breakout");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +36,7 @@ export default function BacktestForm({ onSubmit, loading }: Props) {
       tp_points: tpPoints,
       rr_mode: rrMode,
       custom_sl: rrMode === "custom" ? customSl : undefined,
+      strategy,
     });
   };
 
@@ -165,6 +171,32 @@ export default function BacktestForm({ onSubmit, loading }: Props) {
           />
         </div>
       )}
+
+      {/* Strategy */}
+      <div>
+        <label className="block text-sm text-gray-400 mb-1">Strategy</label>
+        <div className="flex gap-2">
+          {STRATEGIES.map((s) => (
+            <button
+              key={s.value}
+              type="button"
+              onClick={() => setStrategy(s.value)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                strategy === s.value
+                  ? "bg-indigo-600 text-white"
+                  : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500 mt-1">
+          {strategy === "breakout"
+            ? "Enter when price breaks above/below the session box."
+            : "Enter when price touches the session box level (fade/rejection)."}
+        </p>
+      </div>
 
       {/* Submit */}
       <button

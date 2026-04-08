@@ -52,12 +52,19 @@ class BreakoutService:
         offset_points: float,
         sl_distance: float,
         tp_distance: float,
+        strategy: str = "breakout",
     ) -> dict:
         """
-        Evaluates a single trading day:
-        1. Finds the first breakout candle (above session_high or below session_low)
-        2. Determines entry, TP, SL prices
-        3. Walks candles forward to see what gets hit first: TP, SL, or nothing
+        Evaluates a single trading day for the chosen strategy.
+
+        strategy="breakout":
+          - Waits for the first candle that breaks above session_high (→ long)
+            or below session_low (→ short), then enters with TP/SL in that direction.
+
+        strategy="reverse":
+          - Waits for the first candle that touches session_high (→ short, fade the high)
+            or session_low (→ long, fade the low), then enters in the opposite direction.
+          - Entry: at the level itself (± offset), TP away from the level, SL beyond it.
 
         Returns:
         {
@@ -101,6 +108,26 @@ class BreakoutService:
         if not breakout_candles:
             return base_result
 
+        if strategy == "reverse":
+            return self._evaluate_reverse(base_result, breakout_candles, session_high, session_low, offset_points, sl_distance, tp_distance)
+        else:
+            return self._evaluate_breakout(base_result, breakout_candles, session_high, session_low, offset_points, sl_distance, tp_distance)
+
+    def _evaluate_breakout(
+        self,
+        base_result: dict,
+        breakout_candles: list,
+        session_high: float,
+        session_low: float,
+        offset_points: float,
+        sl_distance: float,
+        tp_distance: float,
+    ) -> dict:
+        """
+        Classic breakout strategy:
+        - High broken → LONG entry above session_high + offset
+        - Low broken  → SHORT entry below session_low - offset
+        """
         # --- Step 1: Find the first breakout candle ---
         breakout_direction = None
         breakout_candle_idx = None
@@ -110,14 +137,9 @@ class BreakoutService:
             breaks_low = candle["low"] < session_low
 
             if breaks_high and breaks_low:
-                # Edge case: single candle breaks both levels
-                # Determine direction by which level was closer to the open
                 dist_to_high = abs(candle["open"] - session_high)
                 dist_to_low = abs(candle["open"] - session_low)
-                if dist_to_high <= dist_to_low:
-                    breakout_direction = "long"
-                else:
-                    breakout_direction = "short"
+                breakout_direction = "long" if dist_to_high <= dist_to_low else "short"
                 breakout_candle_idx = idx
                 break
             elif breaks_high:
@@ -137,19 +159,101 @@ class BreakoutService:
             entry_price = session_high + offset_points
             tp_price = entry_price + tp_distance
             sl_price = entry_price - sl_distance
-        else:  # short
+        else:
             entry_price = session_low - offset_points
             tp_price = entry_price - tp_distance
             sl_price = entry_price + sl_distance
 
-        base_result["breakout_direction"] = breakout_direction
-        base_result["entry_price"] = entry_price
-        base_result["tp_price"] = tp_price
-        base_result["sl_price"] = sl_price
+        base_result.update({
+            "breakout_direction": breakout_direction,
+            "entry_price": entry_price,
+            "tp_price": tp_price,
+            "sl_price": sl_price,
+        })
 
-        # --- Step 3: Walk candles from breakout onward, check TP/SL ---
-        for candle in breakout_candles[breakout_candle_idx:]:
-            if breakout_direction == "long":
+        return self._walk_candles(base_result, breakout_candles, breakout_candle_idx, breakout_direction, tp_price, sl_price)
+
+    def _evaluate_reverse(
+        self,
+        base_result: dict,
+        breakout_candles: list,
+        session_high: float,
+        session_low: float,
+        offset_points: float,
+        sl_distance: float,
+        tp_distance: float,
+    ) -> dict:
+        """
+        Reverse (fade) strategy:
+        - Price touches session_high → SHORT (expect rejection downward)
+          Entry: session_high - offset, TP: entry - tp_distance, SL: entry + sl_distance
+        - Price touches session_low  → LONG (expect bounce upward)
+          Entry: session_low + offset, TP: entry + tp_distance, SL: entry - sl_distance
+
+        First touch wins — if high is touched first, we go short; if low first, we go long.
+        If a single candle touches both, pick the level closer to candle open.
+        """
+        touch_direction = None
+        touch_candle_idx = None
+
+        for idx, candle in enumerate(breakout_candles):
+            touches_high = candle["high"] >= session_high
+            touches_low = candle["low"] <= session_low
+
+            if touches_high and touches_low:
+                dist_to_high = abs(candle["open"] - session_high)
+                dist_to_low = abs(candle["open"] - session_low)
+                touch_direction = "short" if dist_to_high <= dist_to_low else "long"
+                touch_candle_idx = idx
+                break
+            elif touches_high:
+                touch_direction = "short"
+                touch_candle_idx = idx
+                break
+            elif touches_low:
+                touch_direction = "long"
+                touch_candle_idx = idx
+                break
+
+        if touch_direction is None:
+            return base_result
+
+        # --- Entry, TP, SL for reverse ---
+        if touch_direction == "short":
+            # Fading the high: sell slightly below session_high
+            entry_price = session_high - offset_points
+            tp_price = entry_price - tp_distance
+            sl_price = entry_price + sl_distance
+        else:
+            # Fading the low: buy slightly above session_low
+            entry_price = session_low + offset_points
+            tp_price = entry_price + tp_distance
+            sl_price = entry_price - sl_distance
+
+        base_result.update({
+            "breakout_direction": touch_direction,
+            "entry_price": entry_price,
+            "tp_price": tp_price,
+            "sl_price": sl_price,
+        })
+
+        return self._walk_candles(base_result, breakout_candles, touch_candle_idx, touch_direction, tp_price, sl_price)
+
+    def _walk_candles(
+        self,
+        base_result: dict,
+        candles: list,
+        start_idx: int,
+        direction: str,
+        tp_price: float,
+        sl_price: float,
+    ) -> dict:
+        """
+        Walks candles from start_idx forward to determine if TP or SL is hit first.
+        Works identically for both breakout and reverse strategies.
+        """
+        for candle in candles[start_idx:]:
+            if direction == "long":
                 hits_tp = candle["high"] >= tp_price
                 hits_sl = candle["low"] <= sl_price
             else:  # short
@@ -157,9 +261,7 @@ class BreakoutService:
                 hits_sl = candle["high"] >= sl_price
 
             if hits_tp and hits_sl:
-                # Edge case: single candle hits both TP and SL
-                # Conservative approach: count as loss
-                # (we can't determine intra-candle order on 5min data)
+                # Conservative: if both hit in the same candle, count as loss
                 base_result["result"] = "loss"
                 return base_result
 
@@ -171,7 +273,6 @@ class BreakoutService:
                 base_result["result"] = "loss"
                 return base_result
 
-        # Breakout happened but neither TP nor SL hit before window closed
         base_result["result"] = "no_breakout"
         return base_result
 
@@ -182,11 +283,12 @@ class BreakoutService:
         offset_points: float,
         sl_distance: float,
         tp_distance: float,
+        strategy: str = "breakout",
     ) -> list[dict]:
         """
         Evaluates all days in the given session_boxes list.
         """
         return [
-            self.evaluate_day(box, symbol_full, offset_points, sl_distance, tp_distance)
+            self.evaluate_day(box, symbol_full, offset_points, sl_distance, tp_distance, strategy)
             for box in session_boxes
         ]

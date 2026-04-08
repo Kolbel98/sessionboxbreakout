@@ -77,6 +77,7 @@ class BacktestView(APIView):
 
     VALID_PERIODS = {"yesterday", "this_week", "last_week", "this_month", "custom"}
     VALID_RR_MODES = set(RR_PRESETS.keys()) | {"custom"}
+    VALID_STRATEGIES = {"breakout", "reverse"}
 
     def get(self, request):
         # --- Validate instrument ---
@@ -153,6 +154,14 @@ class BacktestView(APIView):
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+        # --- Validate strategy ---
+        strategy = request.query_params.get("strategy", "breakout")
+        if strategy not in self.VALID_STRATEGIES:
+            return Response(
+                {"error": f"Unknown strategy '{strategy}'. Available: {list(self.VALID_STRATEGIES)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # --- Step 1: Ensure data exists in DB ---
         try:
             tv_service = TvDataService()
@@ -181,7 +190,7 @@ class BacktestView(APIView):
         symbol_full = f"{INSTRUMENT_MAP[instrument]['exchange']}:{INSTRUMENT_MAP[instrument]['symbol']}"
         breakout_service = BreakoutService()
         daily_results = breakout_service.evaluate_range(
-            session_boxes, symbol_full, offset_points, sl_distance, tp_distance
+            session_boxes, symbol_full, offset_points, sl_distance, tp_distance, strategy
         )
 
         # --- Step 5: Summary ---
@@ -193,6 +202,7 @@ class BacktestView(APIView):
             "period": period,
             "offset_points": offset_points,
             "rr_mode": rr_mode,
+            "strategy": strategy,
             "sl_distance": sl_distance,
             "tp_distance": tp_distance,
             "summary": summary,

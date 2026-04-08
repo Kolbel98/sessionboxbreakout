@@ -9,6 +9,7 @@ export interface BacktestParams {
   tp_points: number;
   rr_mode: string;
   custom_sl?: number;
+  strategy: string;
 }
 
 export interface DailyResult {
@@ -39,6 +40,7 @@ export interface BacktestResponse {
   period: string;
   offset_points: number;
   rr_mode: string;
+  strategy: string;
   sl_distance: number;
   tp_distance: number;
   summary: Summary;
@@ -54,6 +56,7 @@ export async function fetchBacktest(params: BacktestParams): Promise<BacktestRes
   query.set("offset_points", String(params.offset_points));
   query.set("tp_points", String(params.tp_points));
   query.set("rr_mode", params.rr_mode);
+  query.set("strategy", params.strategy);
 
   if (params.period === "custom" && params.date_from && params.date_to) {
     query.set("date_from", params.date_from);
